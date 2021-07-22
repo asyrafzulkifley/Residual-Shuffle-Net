@@ -1,0 +1,145 @@
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+import pandas as pd
+import os
+import cv2
+from tensorflow.python.client import device_lib
+
+    
+def shuffle_module(input_data,total_group=2):
+    input_shape = input_data.get_shape()
+    channel_per_group = input_shape[3] // total_group
+    x = tf.reshape(input_data, [-1,input_shape[1],input_shape[2],channel_per_group,total_group])
+    x = tf.keras.backend.permute_dimensions(x,(0,1,2,4,3))
+    x = tf.reshape(x, [-1,input_shape[1],input_shape[2],input_shape[3]])
+    
+    return x
+    
+def channel_split(input_data):
+    in_channels = input_data.shape[3]
+    group_size = in_channels // 2
+
+    first_half = input_data[:,:,:,:group_size]
+    second_half = input_data[:,:,:,group_size:]
+    
+    return first_half, second_half
+
+def Residual_Shuffle_Net(class_no,input_height,input_width,save_dir): 
+    input_images=tf.keras.layers.Input(shape=(input_height,input_width,3))
+    
+    x = tf.keras.layers.Conv2D(8,(3,3),strides=(1,1),padding='same',use_bias=False)(input_images)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+    x = tf.keras.layers.MaxPooling2D((2,2),strides=(2,2))(x)
+
+    x = tf.keras.layers.Conv2D(16,(3,3),strides=(1,1),padding='same',use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+    x = tf.keras.layers.MaxPooling2D((2,2),strides=(2,2))(x)
+
+    #first triple
+    x = tf.keras.layers.Conv2D(32,(3,3),strides=(1,1),padding='same',use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+
+    first_half,second_half=channel_split(x)
+    x1 = tf.keras.layers.Conv2D(16,(1,1),strides=(1,1),padding='same',use_bias=False)(second_half)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.LeakyReLU(alpha=0.1)(x1)
+    x1 = tf.keras.layers.Concatenate()([first_half,x1])
+    x1 = shuffle_module(x1)
+    
+    x1 = tf.keras.layers.Conv2D(32,(3,3),strides=(1,1),padding='same',use_bias=False)(x1)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.LeakyReLU(alpha=0.1)(x1)
+    x = tf.keras.layers.Add()([x,x1])
+    
+    x = tf.keras.layers.MaxPooling2D((2,2),strides=(2,2))(x)
+
+    #second triple
+    x = tf.keras.layers.Conv2D(64,(3,3),strides=(1,1),padding='same',use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+
+    first_half,second_half=channel_split(x)
+    x1 = tf.keras.layers.Conv2D(32,(1,1),strides=(1,1),padding='same',use_bias=False)(second_half)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.LeakyReLU(alpha=0.1)(x1)
+    x1 = tf.keras.layers.Concatenate()([first_half,x1])
+    x1 = shuffle_module(x1)
+    
+    x1 = tf.keras.layers.Conv2D(64,(3,3),strides=(1,1),padding='same',use_bias=False)(x1)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.LeakyReLU(alpha=0.1)(x1)
+    x = tf.keras.layers.Add()([x,x1])
+    
+    x = tf.keras.layers.MaxPooling2D((2,2),strides=(2,2))(x)
+
+    #third triple
+    x = tf.keras.layers.Conv2D(128,(3,3),strides=(1,1),padding='same',use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+
+    first_half,second_half=channel_split(x)
+    x1 = tf.keras.layers.Conv2D(64,(1,1),strides=(1,1),padding='same',use_bias=False)(second_half)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.LeakyReLU(alpha=0.1)(x1)
+    x1 = tf.keras.layers.Concatenate()([first_half,x1])
+    x1 = shuffle_module(x1)
+    
+    x1 = tf.keras.layers.Conv2D(128,(3,3),strides=(1,1),padding='same',use_bias=False)(x1)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.LeakyReLU(alpha=0.1)(x1)
+    x = tf.keras.layers.Add()([x,x1])
+    
+    x = tf.keras.layers.MaxPooling2D((2,2),strides=(2,2))(x)
+
+    #fourth triple
+    x = tf.keras.layers.Conv2D(256,(3,3),strides=(1,1),padding='same',use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+
+    first_half,second_half=channel_split(x)
+    x1 = tf.keras.layers.Conv2D(128,(1,1),strides=(1,1),padding='same',use_bias=False)(second_half)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.LeakyReLU(alpha=0.1)(x1)
+    x1 = tf.keras.layers.Concatenate()([first_half,x1])
+    x1 = shuffle_module(x1)
+    
+    x1 = tf.keras.layers.Conv2D(256,(3,3),strides=(1,1),padding='same',use_bias=False)(x1)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.LeakyReLU(alpha=0.1)(x1)
+    x = tf.keras.layers.Add()([x,x1])
+
+    size_x=x.shape
+    #ending network
+    x1 = tf.keras.layers.MaxPooling2D((2,2),strides=(2,2))(x)
+    x1 = tf.keras.layers.Conv2D(128,(3,3),strides=(1,1),padding='same',use_bias=False)(x1)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.LeakyReLU(alpha=0.1)(x1)
+    x1 = tf.image.resize(x1,[size_x[1],size_x[2]])
+
+    x2 = tf.keras.layers.MaxPooling2D((4,4),strides=(4,4))(x)
+    x2 = tf.keras.layers.Conv2D(128,(3,3),strides=(1,1),padding='same',use_bias=False)(x2)
+    x2 = tf.keras.layers.BatchNormalization()(x2)
+    x2 = tf.keras.layers.LeakyReLU(alpha=0.1)(x2)
+    x2 = tf.image.resize(x2,[size_x[1],size_x[2]])
+
+    x3 = tf.keras.layers.MaxPooling2D((6,6),strides=(6,6))(x)
+    x3 = tf.keras.layers.Conv2D(128,(3,3),strides=(1,1),padding='same',use_bias=False)(x3)
+    x3 = tf.keras.layers.BatchNormalization()(x3)
+    x3 = tf.keras.layers.LeakyReLU(alpha=0.1)(x3)
+    x3 = tf.image.resize(x3,[size_x[1],size_x[2]])
+    
+    x = tf.keras.layers.Concatenate()([x1,x2,x3])
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x = tf.keras.layers.Dense(class_no,activation='softmax')(x)
+
+    # Create model.
+    model=tf.keras.models.Model(inputs=input_images,outputs=x)
+    model.summary()
+    model.save(save_dir+'model.h5')
+    
+    return model
